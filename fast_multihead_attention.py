@@ -28,7 +28,7 @@ def fast_multihead_attention(q, k, v, p=2, mask=0, denum_term=1, normalize=0, dr
         if create_attn_matrix = 1, the attention matrix will be the second output.
 
     """
-
+    if len(q.shape) != 4: raise ValueError(f"q, k, and v must be 4-dimensional (b, h, n, d)")
     if create_attn_matrix == 0:
         if normalize == 1:
             qn = torch.linalg.norm(q, dim = 3)
