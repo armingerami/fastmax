@@ -90,7 +90,7 @@ def rpe_matrix_creator(n, d, device, dtype, structured = True):
     return rpe
 
 # the inputs of fastmax are query, key, and value (q,k,v) in shape of  4-dimensional tensors (b, h, n, d); i.e. (batch, head, token length, dimension/channel per head)
-fastmax_custom = FASTMultiHeadAttention()
+fastmax = FASTMultiHeadAttention()
 
 assert torch.cuda.is_available()
 torch.set_default_device('cuda')
@@ -105,6 +105,7 @@ v = torch.normal(0,1,[b,h,n,d],device=torch.device('cuda'),requires_grad=True)
 
 dtype = torch.float32
 device = torch.device(0)
+
 mask = True
 dropout = 0.0 # between 0 and 1
 normalize = False
@@ -112,5 +113,5 @@ temperatue = 1.0
 
 rpe_matrix = rpe_matrix_creator(q.shape[-2],q.shape[-1],q.device,q.dtype)
 drop_noise = torch.normal(0,1,size=(q.shape),dtype=q.dtype,device=q.device)
-output = fastmax_custom(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperatue)
+output = fastmax(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperatue)
 
