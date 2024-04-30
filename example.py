@@ -62,7 +62,7 @@ class FASTMultiHeadAttention(torch.nn.Module):
         return FASTMultiHeadAttention_Function.apply(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperatue)
     
 
-def rpe_matrix_creator(n, d, device, dtype, structured = True):
+def rpe_matrix_creator(n, d, device, dtype, structured = True, is_zero = False):
     """
     Creates the relative positional encoding matrix
     Inputs: (assuming query is a (b,h,n,d) or (b*h,n,d) tensor)
@@ -86,7 +86,11 @@ def rpe_matrix_creator(n, d, device, dtype, structured = True):
         pe_positive = torch.flip(pe_positive, [0])
         pe_negative = pe_negative[1:]
         rpe = torch.cat([pe_positive, pe_negative], dim=0)
-    else: rpe = torch.normal(0,1,size=(2*n-1,d),device=device,dtype=dtype)
+    else: 
+        if is_zero:
+            rpe = torch.zeros(0,1,size=(2*n-1,d),device=device,dtype=dtype)
+        else:
+            rpe = torch.normal(0,1,size=(2*n-1,d),device=device,dtype=dtype)
     return rpe
 
 # the inputs of fastmax are query, key, and value (q,k,v) in shape of  4-dimensional tensors (b, h, n, d); i.e. (batch, head, token length, dimension/channel per head)
