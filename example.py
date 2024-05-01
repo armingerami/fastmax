@@ -115,7 +115,7 @@ dropout = 0.0 # between 0 and 1
 normalize = False
 temperatue = 1.0
 
-rpe_matrix = rpe_matrix_creator(q.shape[-2],q.shape[-1],q.device,q.dtype)
+rpe_matrix = rpe_matrix_creator(q.shape[-2],q.shape[-1],q.device,q.dtype,structured = True,is_zero = False)
 drop_noise = torch.normal(0,1,size=(q.shape),dtype=q.dtype,device=q.device)
 output = fastmax(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperatue)
 
