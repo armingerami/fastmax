@@ -4,7 +4,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-// kernel = a0 + a1x + a2x^2
+// // kernel = a0 + a1x + a2x^2
 // __device__ float a0 = 1.0;
 // __device__ float a1 = 1.166666;
 // __device__ float a2 = 0.145833;
@@ -12,15 +12,15 @@
 // __device__ float lim = 2;
 
 // // kernel = a0 + a1x + a2x^2
-__device__ float a0 = 1.0;
-__device__ float a1 = 1.0;
-__device__ float a2 = 0.5;
-// -lim^2 <= q.k <= lim^2
-__device__ float lim = 1;
+// __device__ float a0 = 1.0;
+// __device__ float a1 = 1.0;
+// __device__ float a2 = 0.5;
+// // -lim^2 <= q.k <= lim^2
+// __device__ float lim = 1;
 
 namespace {
 __global__
-void calc_unmasked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> o, int bh, int nq, int nk, int d){
+void calc_unmasked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> o, int bh, int nq, int nk, int d, float a0, float a1, float a2){
 
   extern __shared__ float s[];
   const int outer = threadIdx.x;
@@ -139,7 +139,7 @@ void calc_unmasked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPt
 }
 
 __global__
-void calc_masked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> o, int bh, int nq, int nk, int d){
+void calc_masked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> o, int bh, int nq, int nk, int d, float a0, float a1, float a2){
 
   extern __shared__ float s[];
   const int outer = threadIdx.x;
@@ -310,7 +310,7 @@ void find_max(torch::PackedTensorAccessor32<float,2,torch::RestrictPtrTraits> no
 }
 
 __global__
-void apply_norm(torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> a, torch::PackedTensorAccessor32<float,1,torch::RestrictPtrTraits> maxes, int bh, int n, int d){
+void apply_norm(torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> a, torch::PackedTensorAccessor32<float,1,torch::RestrictPtrTraits> maxes, int bh, int n, int d, float lim){
   const int m = threadIdx.x;
   const int i = blockIdx.x;
   float t;
@@ -344,7 +344,11 @@ torch::Tensor forward_cuda(
     bool mask,
     float dropout,
     bool normalize,
-    float temperature){
+    float temperature,
+    float a0,
+    float a1,
+    float a2,
+    float lim){
     // q: (nq,b*h,d)
     // k: (nk,b*h,d)
     // v: (nk,b*h,d)
@@ -371,15 +375,15 @@ torch::Tensor forward_cuda(
     calc_norms<<<nk,bh>>>(k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),knorms.packed_accessor32<float,2,torch::RestrictPtrTraits>(),bh,nk,d);
     find_max<<<1,bh>>>(qnorms.packed_accessor32<float,2,torch::RestrictPtrTraits>(),qmaxes.packed_accessor32<float,1,torch::RestrictPtrTraits>(),bh,nk);
     find_max<<<1,bh>>>(knorms.packed_accessor32<float,2,torch::RestrictPtrTraits>(),kmaxes.packed_accessor32<float,1,torch::RestrictPtrTraits>(),bh,nq);
-    apply_norm<<<blocks,threads>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),qmaxes.packed_accessor32<float,1,torch::RestrictPtrTraits>(),bh,nq,d);
-    apply_norm<<<blocks,threads>>>(k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),kmaxes.packed_accessor32<float,1,torch::RestrictPtrTraits>(),bh,nk,d);
+    apply_norm<<<blocks,threads>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),qmaxes.packed_accessor32<float,1,torch::RestrictPtrTraits>(),bh,nq,d,lim);
+    apply_norm<<<blocks,threads>>>(k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),kmaxes.packed_accessor32<float,1,torch::RestrictPtrTraits>(),bh,nk,d,lim);
   }
 
   if(mask){
-    calc_masked<<<blocks,threads,2*(d)*sizeof(float)>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d);
+    calc_masked<<<blocks,threads,2*(d)*sizeof(float)>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d,a0,a1,a2);
   }
   else{
-    calc_unmasked<<<blocks,threads,2*(d)*sizeof(float)>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d);
+    calc_unmasked<<<blocks,threads,2*(d)*sizeof(float)>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d,a0,a1,a2);
   }
 
   cudaDeviceSynchronize();
