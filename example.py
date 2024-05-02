@@ -32,7 +32,7 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
         ctx.save_for_backward(q,k,v,o)
         ctx.mask = mask
         ctx.b = b
-        ctx.t = temperatue
+        ctx.t = temperature
         ctx.a0 = a0
         ctx.a1 = a1
         ctx.a2 = a2
