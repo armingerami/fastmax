@@ -278,7 +278,7 @@ void apply_rpe_and_temp(torch::PackedTensorAccessor32<float,3,torch::RestrictPtr
   if(m < d && i < bh){
     for(int l = 0; l < nk; ++l){
       k[l][i][m] /= temperature;
-      k[l][i][m] += rpe_matrix[(l+nk)%(2*nk-1)][m];
+      // k[l][i][m] += rpe_matrix[(l+nk)%(2*nk-1)][m];
     }
   }
 }
@@ -369,7 +369,7 @@ torch::Tensor forward_cuda(
   auto kmaxes = torch::zeros({bh},opts);
 
   apply_rpe_and_temp<<<blocks,threads>>>(k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),rpe_matrix.packed_accessor32<float,2,torch::RestrictPtrTraits>(),bh,nk,d,temperature);
-
+  cudaDeviceSynchronize();
   if(normalize){
     calc_norms<<<nq,bh>>>(k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),qnorms.packed_accessor32<float,2,torch::RestrictPtrTraits>(),bh,nq,d);
     calc_norms<<<nk,bh>>>(k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),knorms.packed_accessor32<float,2,torch::RestrictPtrTraits>(),bh,nk,d);
