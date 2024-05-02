@@ -110,10 +110,10 @@ fastmax_custom = FASTMultiHeadAttention()
 
 assert torch.cuda.is_available()
 torch.set_default_device('cuda')
-b = 16
-h = 32
-n = 4000
-d = 64
+b = 2
+h = 2
+n = 3
+d = 2
 
 q = torch.normal(0,1,[b,h,n,d],device=torch.device('cuda'),requires_grad=True)
 k = torch.normal(0,1,[b,h,n,d],device=torch.device('cuda'),requires_grad=True)
@@ -133,4 +133,6 @@ lim = 1.0
 rpe_matrix = rpe_matrix_creator(k.shape[-2],q.shape[-1],q.device,q.dtype,structured = True, is_zero = False)
 drop_noise = torch.normal(0,1,size=(q.shape),dtype=q.dtype,device=q.device)
 output = fastmax_custom(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperatue,a0,a1,a2,lim)
+print(output)
+# print(torch.autograd.functional.jacobian(fastmax_custom, (q,k,v,drop_noise,rpe_matrix))[0:3])
 
