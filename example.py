@@ -36,9 +36,9 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
         ctx.a0 = a0
         ctx.a1 = a1
         ctx.a2 = a2
-        o = o[:,:,:q.shape[2]].permute(1,0,2).contiguous() # (n,b*h,d) -> (b*h,n,d)
-        if b != 0: o = o.reshape((b,int(o.shape[0]/b),o.shape[1],o.shape[2])) # (b*h,n,d) -> (b,h,n,d)
-        return o
+        out = o[:,:,:q.shape[2]].permute(1,0,2).contiguous() # (n,b*h,d) -> (b*h,n,d)
+        if b != 0: out = out.reshape((b,int(out.shape[0]/b),out.shape[1],out.shape[2])) # (b*h,n,d) -> (b,h,n,d)
+        return out
 
     @staticmethod
     def backward(ctx, grad_output):
