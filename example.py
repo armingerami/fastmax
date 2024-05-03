@@ -62,7 +62,7 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
           gradq = gradq.reshape((b,int(gradq.shape[0]/b),gradq.shape[1],gradq.shape[2])).contiguous()
           gradk = gradk.reshape((b,int(gradk.shape[0]/b),gradk.shape[1],gradk.shape[2])).contiguous()
           gradv = gradv.reshape((b,int(gradv.shape[0]/b),gradv.shape[1],gradv.shape[2])).contiguous()
-        return gradq, gradk/t, gradv, None, None, None, None, None, None
+        return gradq, gradk/t, gradv, None, None, None, None, None, None, None, None, None, None
 
 
 class FASTMultiHeadAttention(torch.nn.Module):
