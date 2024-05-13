@@ -261,7 +261,7 @@ def softmax(q,k,v):
 # assert torch.cuda.is_available()
 # torch.set_default_device('cuda')
 
-# Leslie look here
+# look here
 b = 20 # batch
 h = 12 # head
 d = 32 # dimension per head (i.e. model dimension/h)
