@@ -139,6 +139,104 @@ void calc_unmasked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPt
 }
 
 __global__
+void calc_unmasked_ryan(const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> o, int bh, int nq, int nk, int d, float a0, float a1, float a2){
+    //auto o = torch::zeros({nq,bh,d+1},opts);
+    int i_init = blockDim.x * blockIdx.x + threadIdx.x; // n index
+    int t_init = blockDim.y * blockIdx.y + threadIdx.y; // bh index
+    int j_init = blockDim.z * blockIdx.z + threadIdx.z; // d index
+
+    int i_stride = blockDim.x * gridDim.x;
+    int t_stride = blockDim.y * gridDim.y;
+    int j_stride = blockDim.z * gridDim.z;
+
+    float F_ij = 0.0;
+    float z_ij_1 = 0.0;
+    float z_ij_2 = 0.0;
+    float z_ij_3 = 0.0;
+
+    float g_i = 0.0;
+    float z_i_g1 = 0.0;
+    float z_i_g2 = 0.0;
+    float z_i_g3 = 0.0;
+
+    float y_mj_2 = 0.0;
+    float y_mlj_2 = 0.0;
+    float y_l_g2 = 0.0;
+    float y_lp_g3 = 0.0;
+
+    for (int i = i_init; i < nq; i+= i_stride) {
+        for (int t = t_init; t < bh; t+= t_stride) {
+            for (int j = j_init; j < d; j+= j_stride) {
+                F_ij = 0.0;
+                z_ij_1 = 0.0;
+                z_ij_2 = 0.0;
+                z_ij_3 = 0.0;
+
+                g_i = 0.0;
+                z_i_g1 = 0.0;
+                z_i_g2 = 0.0;
+                z_i_g3 = 0.0;
+
+                for (int n = 0; n < nk; n++) {
+                    z_ij_1 += k[n][t][j];
+                }
+                z_ij_1 = z_ij_1 * a0;
+
+                y_mj_2 = 0.0;
+                for (int m = 0; m < d; m++) {
+                    y_mj_2 = 0.0;
+                    for (int n = 0; n < nk; n++) {
+                        y_mj_2 += k[n][t][m]*v[n][t][j];
+                    }
+                    z_ij_2 += q[i][t][m]*y_mj_2;
+                }
+                z_ij_2 = z_ij_2 * a1;
+
+                y_mlj_2 = 0.0;
+                for (int m = 0; m < d; m++) {
+                    for (int l = 0; l < d; l++) {
+                        y_mlj_2 = 0.0;
+                        for (int n = 0; n < nk; n++) {
+                            y_mlj_2 += k[n][t][m] * k[n][t][l] * v[n][t][j];
+                        }
+                        z_ij_3 += q[i][t][m] * q[i][t][l] * y_mlj_2;
+                    }
+                }
+                z_ij_3 = z_ij_3 * a2;
+
+                z_i_g1 = a0*nk;
+
+                y_l_g2 = 0.0;
+                for (int l = 0; l < d; l++) {
+                    y_l_g2 = 0.0;
+                    for (int m = 0; m < nk; m++) {
+                        y_l_g2 += k[m][t][l];
+                    }
+                    z_i_g2 += q[i][t][l] * y_l_g2;
+                }
+                z_i_g2 = z_i_g2 * a1;
+
+                y_lp_g3 = 0.0;
+                for (int l = 0; l < d; l++) {
+                    for (int p = 0; p < d; p++) {
+                        y_lp_g3 = 0.0;
+                        for (int m = 0; m < nk; m++) {
+                            y_lp_g3 += k[m][t][l] * k[m][t][p];
+                        }
+                        z_i_g3 += q[i][t][l] * q[i][t][p] * y_lp_g3;
+                    }
+                }
+                z_i_g3 = z_i_g3 * a2;
+
+                F_ij = z_ij_1 + z_ij_2 + z_ij_3;
+                g_i = z_i_g1 + z_i_g2 + z_i_g3;
+                o[i][t][j] = F_ij / g_i;
+            }
+        }
+    }
+}
+
+__global__
 void calc_masked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> o, int bh, int nq, int nk, int d, float a0, float a1, float a2){
 
   extern __shared__ float s[];
@@ -363,6 +461,7 @@ torch::Tensor forward_cuda(
   
   auto opts =  torch::TensorOptions().dtype(torch::kFloat32).layout(torch::kStrided).device(torch::kCUDA, 0);
   auto o = torch::zeros({nq,bh,d+1},opts);
+  auto o_ryan = torch::zeros({nq,bh,d},opts);
   auto qnorms = torch::zeros({nq,bh},opts);
   auto knorms = torch::zeros({nk,bh},opts);
   auto qmaxes = torch::zeros({bh},opts);
@@ -383,12 +482,25 @@ torch::Tensor forward_cuda(
     calc_masked<<<blocks,threads,2*(d)*sizeof(float)>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d,a0,a1,a2);
   }
   else{
-    calc_unmasked<<<blocks,threads,2*(d)*sizeof(float)>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d,a0,a1,a2);
+    //calc_unmasked<<<blocks,threads,2*(d)*sizeof(float)>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d,a0,a1,a2);
+    dim3 threads_per_block(4,4,4); // 512
+    //dim3 num_blocks(
+    //    nq / threads_per_block.x + (nq % threads_per_block.x != 0),
+    //    bh / threads_per_block.y + (nq % threads_per_block.y != 0),
+    //    (d+1) / threads_per_block.z + ((d+1) % threads_per_block.z != 0)
+    //);
+    dim3 num_blocks(
+        nq / threads_per_block.x + (nq % threads_per_block.x != 0),
+        bh / threads_per_block.y + (nq % threads_per_block.y != 0),
+        d  / threads_per_block.z + (d  % threads_per_block.z != 0)
+    );
+    calc_unmasked_ryan<<<num_blocks, threads_per_block>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o_ryan.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d,a0,a1,a2);
+    return o_ryan;
   }
 
-  cudaDeviceSynchronize();
-  apply_dropout<<<blocks,threads>>>(o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),drop_noise.packed_accessor32<float,3,torch::RestrictPtrTraits>(),dropout,bh,nq,d);
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
+  //apply_dropout<<<blocks,threads>>>(o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),drop_noise.packed_accessor32<float,3,torch::RestrictPtrTraits>(),dropout,bh,nq,d);
+  //cudaDeviceSynchronize();
 
   return o;
 }
