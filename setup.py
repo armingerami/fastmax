@@ -22,18 +22,17 @@ from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 #     })
 
 setup(
-    name='fastmax_cuda',
+    name="fastmax_cuda",
     ext_modules=[
         CUDAExtension(
-            name='fastmax_cuda', 
+            name="fastmax_cuda",
             sources=[
-                'fastmax_cuda.cpp',
-                'fastmax_cuda_forward.cu',
-                'fastmax_cuda_backward.cu',
+                "fastmax_cuda.cpp",
+                "fastmax_cuda_forward.cu",
+                "fastmax_cuda_backward.cu",
             ],
-            extra_compile_args=["-lineinfo"]
+            extra_compile_args={"nvcc": ["-lineinfo"]},
         ),
     ],
-    cmdclass={
-        'build_ext': BuildExtension
-    })
+    cmdclass={"build_ext": BuildExtension},
+)

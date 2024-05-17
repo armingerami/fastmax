@@ -141,13 +141,13 @@ void calc_unmasked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPt
 __global__
 void calc_unmasked_ryan(const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> o, int bh, int nq, int nk, int d, float a0, float a1, float a2){
     //auto o = torch::zeros({nq,bh,d+1},opts);
-    int i_init = blockDim.x * blockIdx.x + threadIdx.x; // n index
-    int t_init = blockDim.y * blockIdx.y + threadIdx.y; // bh index
-    int j_init = blockDim.z * blockIdx.z + threadIdx.z; // d index
+    int i = blockDim.x * blockIdx.x + threadIdx.x; // n index
+    int t = blockDim.y * blockIdx.y + threadIdx.y; // bh index
+    int j = blockDim.z * blockIdx.z + threadIdx.z; // d index
 
-    int i_stride = blockDim.x * gridDim.x;
-    int t_stride = blockDim.y * gridDim.y;
-    int j_stride = blockDim.z * gridDim.z;
+    //int i_stride = blockDim.x * gridDim.x;
+    //int t_stride = blockDim.y * gridDim.y;
+    //int j_stride = blockDim.z * gridDim.z;
 
     float F_ij = 0.0;
     float z_ij_1 = 0.0;
@@ -164,77 +164,94 @@ void calc_unmasked_ryan(const torch::PackedTensorAccessor32<float,3,torch::Restr
     float y_l_g2 = 0.0;
     float y_lp_g3 = 0.0;
 
-    for (int i = i_init; i < nq; i+= i_stride) {
-        for (int t = t_init; t < bh; t+= t_stride) {
-            for (int j = j_init; j < d; j+= j_stride) {
-                F_ij = 0.0;
-                z_ij_1 = 0.0;
-                z_ij_2 = 0.0;
-                z_ij_3 = 0.0;
+    //for (int i = i_init; i < nq; i+= i_stride) {
+    //    for (int t = t_init; t < bh; t+= t_stride) {
+    //        for (int j = j_init; j < d; j+= j_stride) {
+    //F_ij = 0.0;
+    //z_ij_1 = 0.0;
+    //z_ij_2 = 0.0;
+    //z_ij_3 = 0.0;
 
-                g_i = 0.0;
-                z_i_g1 = 0.0;
-                z_i_g2 = 0.0;
-                z_i_g3 = 0.0;
+    //g_i = 0.0;
+    //z_i_g1 = 0.0;
+    //z_i_g2 = 0.0;
+    //z_i_g3 = 0.0;
 
-                for (int n = 0; n < nk; n++) {
-                    z_ij_1 += k[n][t][j];
-                }
-                z_ij_1 = z_ij_1 * a0;
+    if (i < nq && t < bh && j < d) {
+        for (int n = 0; n < nk; n++) {
+            z_ij_1 += v[n][t][j];
+        }
+        z_ij_1 = z_ij_1 * a0;
 
-                y_mj_2 = 0.0;
-                for (int m = 0; m < d; m++) {
-                    y_mj_2 = 0.0;
-                    for (int n = 0; n < nk; n++) {
-                        y_mj_2 += k[n][t][m]*v[n][t][j];
-                    }
-                    z_ij_2 += q[i][t][m]*y_mj_2;
-                }
-                z_ij_2 = z_ij_2 * a1;
+        y_mj_2 = 0.0;
+        for (int m = 0; m < d; m++) {
+            y_mj_2 = 0.0;
+            for (int n = 0; n < nk; n++) {
+                y_mj_2 += k[n][t][m]*v[n][t][j];
+            }
+            z_ij_2 += q[i][t][m]*y_mj_2;
+        }
+        z_ij_2 = z_ij_2 * a1;
 
+        y_mlj_2 = 0.0;
+        for (int m = 0; m < d; m++) {
+            for (int l = 0; l < d; l++) {
                 y_mlj_2 = 0.0;
-                for (int m = 0; m < d; m++) {
-                    for (int l = 0; l < d; l++) {
-                        y_mlj_2 = 0.0;
-                        for (int n = 0; n < nk; n++) {
-                            y_mlj_2 += k[n][t][m] * k[n][t][l] * v[n][t][j];
-                        }
-                        z_ij_3 += q[i][t][m] * q[i][t][l] * y_mlj_2;
-                    }
+                for (int n = 0; n < nk; n++) {
+                    y_mlj_2 += k[n][t][m] * k[n][t][l] * v[n][t][j];
                 }
-                z_ij_3 = z_ij_3 * a2;
-
-                z_i_g1 = a0*nk;
-
-                y_l_g2 = 0.0;
-                for (int l = 0; l < d; l++) {
-                    y_l_g2 = 0.0;
-                    for (int m = 0; m < nk; m++) {
-                        y_l_g2 += k[m][t][l];
-                    }
-                    z_i_g2 += q[i][t][l] * y_l_g2;
-                }
-                z_i_g2 = z_i_g2 * a1;
-
-                y_lp_g3 = 0.0;
-                for (int l = 0; l < d; l++) {
-                    for (int p = 0; p < d; p++) {
-                        y_lp_g3 = 0.0;
-                        for (int m = 0; m < nk; m++) {
-                            y_lp_g3 += k[m][t][l] * k[m][t][p];
-                        }
-                        z_i_g3 += q[i][t][l] * q[i][t][p] * y_lp_g3;
-                    }
-                }
-                z_i_g3 = z_i_g3 * a2;
-
-                F_ij = z_ij_1 + z_ij_2 + z_ij_3;
-                g_i = z_i_g1 + z_i_g2 + z_i_g3;
-                o[i][t][j] = F_ij / g_i;
+                z_ij_3 += q[i][t][m] * q[i][t][l] * y_mlj_2;
             }
         }
+        z_ij_3 = z_ij_3 * a2;
+
+        z_i_g1 = a0*nk;
+
+        y_l_g2 = 0.0;
+        for (int l = 0; l < d; l++) {
+            y_l_g2 = 0.0;
+            for (int m = 0; m < nk; m++) {
+                y_l_g2 += k[m][t][l];
+            }
+            z_i_g2 += q[i][t][l] * y_l_g2;
+        }
+        z_i_g2 = z_i_g2 * a1;
+
+        y_lp_g3 = 0.0;
+        for (int l = 0; l < d; l++) {
+            for (int p = 0; p < d; p++) {
+                y_lp_g3 = 0.0;
+                for (int m = 0; m < nk; m++) {
+                    y_lp_g3 += k[m][t][l] * k[m][t][p];
+                }
+                z_i_g3 += q[i][t][l] * q[i][t][p] * y_lp_g3;
+            }
+        }
+        z_i_g3 = z_i_g3 * a2;
+
+        F_ij = z_ij_1 + z_ij_2 + z_ij_3;
+        g_i = z_i_g1 + z_i_g2 + z_i_g3;
+        o[i][t][j] = F_ij / g_i;
     }
+    //        }
+    //    }
+    //}
 }
+
+__global__
+void compute_z1(torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> z1, int bh, int nq, int nk, int d, float a0, float a1, float a2){
+}
+
+__global__
+void compute_z2(torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> z2, int bh, int nq, int nk, int d, float a0, float a1, float a2){
+}
+
+__global__
+void compute_z3(torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> z3, int bh, int nq, int nk, int d, float a0, float a1, float a2){
+}
+
+__global__
+void compute_g1()
 
 __global__
 void calc_masked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> q, const torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> k, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> v, torch::PackedTensorAccessor32<float,3,torch::RestrictPtrTraits> o, int bh, int nq, int nk, int d, float a0, float a1, float a2){
@@ -483,18 +500,53 @@ torch::Tensor forward_cuda(
   }
   else{
     //calc_unmasked<<<blocks,threads,2*(d)*sizeof(float)>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d,a0,a1,a2);
-    dim3 threads_per_block(4,4,4); // 512
-    //dim3 num_blocks(
-    //    nq / threads_per_block.x + (nq % threads_per_block.x != 0),
-    //    bh / threads_per_block.y + (nq % threads_per_block.y != 0),
-    //    (d+1) / threads_per_block.z + ((d+1) % threads_per_block.z != 0)
-    //);
+    dim3 threads_per_block(8,8,8); // 512
     dim3 num_blocks(
         nq / threads_per_block.x + (nq % threads_per_block.x != 0),
         bh / threads_per_block.y + (nq % threads_per_block.y != 0),
         d  / threads_per_block.z + (d  % threads_per_block.z != 0)
     );
     calc_unmasked_ryan<<<num_blocks, threads_per_block>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(),k.packed_accessor32<float,3,torch::RestrictPtrTraits>(),v.packed_accessor32<float,3,torch::RestrictPtrTraits>(),o_ryan.packed_accessor32<float,3,torch::RestrictPtrTraits>(),bh,nq,nk,d,a0,a1,a2);
+
+    auto z1 = torch::zeros({nq, bh, d}, opts);
+    auto z2 = torch::zeros({nq, bh, d}, opts);
+    auto z3 = torch::zeros({nq, bh, d}, opts);
+
+    auto z1_g = torch::zeros({nq, d}, opts);
+    auto z2_g = torch::zeros({nq, d}, opts);
+    auto z3_g = torch::zeros({nq, d}, opts);
+
+    const int num_streams = 6;
+    cudaStream_t streams[num_streams];
+
+    cudaStreamCreate(&streams[0]);
+    cudaStreamCreate(&streams[1]);
+    cudaStreamCreate(&streams[2]);
+    cudaStreamCreate(&streams[3]);
+    cudaStreamCreate(&streams[4]);
+    cudaStreamCreate(&streams[5]);
+
+    dim3 threads_per_block_z(8,8,8); // 512
+    dim3 num_blocks_z(
+        nq / threads_per_block_z.x + (nq % threads_per_block_z.x != 0),
+        bh / threads_per_block_z.y + (nq % threads_per_block_z.y != 0),
+        d  / threads_per_block_z.z + (d  % threads_per_block_z.z != 0)
+    );
+
+    dim3 threads_per_block_g(8,8); // 512
+    dim3 num_blocks_g(
+        nq / threads_per_block_g.x + (nq % threads_per_block_g.x != 0),
+        d  / threads_per_block_g.y + (d  % threads_per_block_g.y != 0)
+    );
+
+    compute_z1<<<num_blocks_z, threads_per_block_z, 0, streams[0]>>>(v.packed_accessor32<float,3,torch::RestrictPtrTraits>(), z1.packed_accessor32<float,3,torch::RestrictPtrTraits>(), bh, nq, nk, d, a0, a1, a2);
+    compute_z2<<<num_blocks_z, threads_per_block_z, 0, streams[1]>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(), k.packed_accessor32<float,3,torch::RestrictPtrTraits>(), v.packed_accessor32<float,3,torch::RestrictPtrTraits>(), z2.packed_accessor32<float,3,torch::RestrictPtrTraits>(), bh, nq, nk, d, a0, a1, a2);
+    compute_z3<<<num_blocks_z, threads_per_block_z, 0, streams[2]>>>(q.packed_accessor32<float,3,torch::RestrictPtrTraits>(), k.packed_accessor32<float,3,torch::RestrictPtrTraits>(), v.packed_accessor32<float,3,torch::RestrictPtrTraits>(), z3.packed_accessor32<float,3,torch::RestrictPtrTraits>(), bh, nq, nk, d, a0, a1, a2);
+
+    compute_g1<<<num_blocks_g, threads_per_block_g, 0, streams[3]>>>
+    compute_g2<<<num_blocks_g, threads_per_block_g, 0, streams[4]>>>
+    compute_g3<<<num_blocks_g, threads_per_block_g, 0, streams[5]>>>
+
     return o_ryan;
   }
 
