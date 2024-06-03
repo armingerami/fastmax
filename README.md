@@ -6,7 +6,7 @@ To run on the cluster, follows these steps:
 2. Run the following linux commands in order (assuming you're already in your virtual env.): "module load cuda", "module load gcc", "python setup.py install" (to run "python setup.py install" you need 32gb DRAM memory).
 3. You have now created a library named fastmax_cuda in your environment. To use fastmax in your transformer, follow the example.py file. In summary, copy line 1 to 93 in example.py on top of the python file you call multihead attention. To use Fast attention, replace wherever you call multihead attention with line 113 to 115.
 
-**NOTE**: The size of batch $\times$ head must be larger than 32. Also, for the best performance have batch $\times$ head $\times$ dimension be either a multiple of the number of your cuda cores, or much larger than it. For example, if using RTX A6000, having batch = 32, head = 16, dimension = 64 is a good choice (or batch = 16, head = 32, dimension = 64).
+**NOTE**: The size of batch $\times$ head must be larger than 32. Also, for the best performance have batch $\times$ head $\times$ dimension be either a multiple of the number of your cuda cores, or much larger than it. For example, if using RTX A6000, having batch = 64, head = 16, dimension = 32 is a good choice (or batch = 64, head = 8, dimension = 64).
 
 # Some forward pass numbers on RTX A6000
 B = 64, H = 8, N = 1000, D = 32, P = 2:
