@@ -7,7 +7,8 @@ To run on the cluster, follows these steps:
 3. You have now created a library named fastmax_cuda in your environment. To use fastmax in your transformer, follow the example.py file. In summary, copy line 1 to 278 in example.py on top of the python file you call multihead attention. To use Fast attention, replace wherever you call multihead attention with line 303 to 305.
 
 **NOTE**: The size of batch $\times$ head must be larger than 32. Also, for the best performance have batch $\times$ head $\times$ dimension be either a multiple of the number of your cuda cores, or much larger than it. For example, if using RTX A6000, having batch = 64, head = 16, dimension = 32 is a good choice (or batch = 64, head = 8, dimension = 64).
-\\**NOTE**: You can use ADAM gradient for optimization since it's based on first order derivative.
+
+**NOTE**: You can use ADAM gradient for optimization since it's based on first order derivative.
 
 # Parameters
 - **use_custom_gradient**: When instantiating, you can set whether to use eithr our CUDA code or the Pytorch version using a boolean flag: fastmax = FASTMultiHeadAttention(use_custom_gradient=True), where use_custom_gradient is the mentioned flag, and it's True by default.
