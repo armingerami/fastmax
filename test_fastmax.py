@@ -36,7 +36,7 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
         ctx.mask = mask
         ctx.p = p
         ctx.b = b
-        ctx.t = temperatue
+        ctx.t = temperature
         ctx.a0 = a0
         ctx.a1 = a1
         ctx.a2 = a2
@@ -108,7 +108,7 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
         
     #     return gradq, gradk/t, gradv, None, None, None, None, None, None, None, None, None, None, None
 
-def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatue=1, a0=1,a1=1,a2=0.5,lim=1,p=2, create_attn_matrix = 0):
+def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperature=1, a0=1,a1=1,a2=0.5,lim=1,p=2, create_attn_matrix = 0):
     """
     Input: query, key, and value matrices (b, h, n, d)
         b: batch size
@@ -116,7 +116,7 @@ def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatu
         n: number of tokens
         d: dimension per attention head (d = d_model / h)
     mask: boolean indicating whether to apply causal masking
-    temperatue: Hyperparameter to control the standard deviation of <q, k>; stdev(<q, k>) = 1/temperatue
+    temperature: Hyperparameter to control the standard deviation of <q, k>; stdev(<q, k>) = 1/temperature
         Stdev of <q, k> is important in general with attention, but even more so when using a taylor
         expansion to approximate an exponential because the error increases with the stdev of <q, k>.
         In normal attention, stdev equates to the "temperature" of the softmax function, and with a
@@ -127,7 +127,7 @@ def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatu
     """
     if create_attn_matrix == 0:
         if normalize == 1:
-            temperatue = 1
+            temperature = 1
             # q = q - torch.mean(q,dim = 3).unsqueeze(-1)
             # k = k - torch.mean(k,dim = 3).unsqueeze(-1)
             qn = torch.linalg.norm(q, dim = 3)
@@ -135,9 +135,9 @@ def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatu
             q = lim*q/torch.linalg.norm(qn, dim = 2, ord = float('inf')).unsqueeze(-1).unsqueeze(-1)
             k = lim*k/torch.linalg.norm(kn, dim = 2, ord = float('inf')).unsqueeze(-1).unsqueeze(-1)
         else:
-            temperatue = temperatue*math.sqrt(q.shape[3])
-            temperatue = 1
-        temperatue2 = temperatue*temperatue
+            temperature = temperature*math.sqrt(q.shape[3])
+            temperature = 1
+        temperature2 = temperature*temperature
 
         # Prepare the quadratic terms with respect to k and q:
         if p == 2:
@@ -153,9 +153,9 @@ def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatu
             if mask == 0:
                 first_term = a0*torch.sum(v,-2)  # (b, h, d)
 
-                second_term = a1*torch.matmul(k.swapaxes(-2,-1),v)/temperatue  # (b, h, d, d)
+                second_term = a1*torch.matmul(k.swapaxes(-2,-1),v)/temperature  # (b, h, d, d)
 
-                third_term = a2*torch.matmul(k2.swapaxes(-2,-1),v)/temperatue2  # (b, h, d^2, d)
+                third_term = a2*torch.matmul(k2.swapaxes(-2,-1),v)/temperature2  # (b, h, d^2, d)
 
                 div1 = a0*torch.ones([k.shape[0],k.shape[1],1,1], device=k.device)*k.shape[2] # (b, h, 1, 1)
                 div2 = a1*torch.sum(k,-2).unsqueeze(-1) # (b, h, d, 1)
@@ -163,8 +163,8 @@ def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatu
 
                 ans2 = torch.matmul(q,second_term)  # (b, h, n, d)
                 ans3 = torch.matmul(q2,third_term)  # (b, h, n, d)
-                div2 = torch.matmul(q,div2)/(temperatue) # (b, h, n, 1)
-                div3 = torch.matmul(q2,div3)/(temperatue2) # (b, h, n, 1)
+                div2 = torch.matmul(q,div2)/(temperature) # (b, h, n, 1)
+                div3 = torch.matmul(q2,div3)/(temperature2) # (b, h, n, 1)
 
                 ans = ans2+ans3 # (b, h, n, d)
                 ans = torch.add(ans.permute(2,3,1,0) ,first_term.permute(2,1,0)).permute(3,2,0,1) # (b, h, n, d)
@@ -174,14 +174,14 @@ def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatu
 
             else:
                 first = a0*torch.cumsum(v,2) # (b, h, n, d)
-                second = a1*torch.einsum("bhij,bhijk -> bhik",[q, torch.cumsum(torch.einsum("bhij,bhik -> bhijk",[k,v]),2)])/temperatue # (b, h, n, d)
-                third = a2*torch.einsum("bhij,bhijk -> bhik",[q2,torch.cumsum(torch.einsum("bhij,bhik -> bhijk",[k2,v]),2)])/temperatue2 # (b, h, n, d)
+                second = a1*torch.einsum("bhij,bhijk -> bhik",[q, torch.cumsum(torch.einsum("bhij,bhik -> bhijk",[k,v]),2)])/temperature # (b, h, n, d)
+                third = a2*torch.einsum("bhij,bhijk -> bhik",[q2,torch.cumsum(torch.einsum("bhij,bhik -> bhijk",[k2,v]),2)])/temperature2 # (b, h, n, d)
 
                 kcs = torch.cumsum(k,-2) # (b, h, n, d)
                 k2cs = torch.cumsum(k2,-2) # (b, h, n, d^2)
                 div1 = a0*torch.cumsum(torch.ones([q.shape[0],q.shape[1],q.shape[2]], device=k.device),2) # (b, h, 1)
-                div2 = a1*torch.einsum("bhij,bhij -> bhi",[q,kcs])/temperatue # (b, h, n)
-                div3 = a2*torch.einsum("bhij,bhij -> bhi",[q2,k2cs])/temperatue2 # (b, h, n)
+                div2 = a1*torch.einsum("bhij,bhij -> bhi",[q,kcs])/temperature # (b, h, n)
+                div3 = a2*torch.einsum("bhij,bhij -> bhi",[q2,k2cs])/temperature2 # (b, h, n)
                 div = (div1 + div2 + div3).unsqueeze(-1) # (b, h, n, 1)
 
                 ans = first + second + third # (b, h, n, d)
@@ -194,13 +194,13 @@ def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatu
             q = drop_attn(q)
             if mask is None or not mask:
                 first_term = a0*torch.sum(v,-2)  # (b, h, d)
-                second_term = a1*torch.matmul(k.swapaxes(-2,-1),v)/temperatue  # (b, h, d, d)
+                second_term = a1*torch.matmul(k.swapaxes(-2,-1),v)/temperature  # (b, h, d, d)
 
                 div1 = a0*torch.ones([k.shape[0],k.shape[1],1,1], device=k.device)*k.shape[2] # (b, h, 1, 1)
                 div2 = a1*torch.sum(k,-2).unsqueeze(-1) # (b, h, d, 1)
 
                 ans2 = torch.matmul(q,second_term)  # (b, h, n, d)
-                div2 = torch.matmul(q,div2)/(temperatue) # (b, h, n, 1)
+                div2 = torch.matmul(q,div2)/(temperature) # (b, h, n, 1)
 
                 ans = ans2 # (b, h, n, d)
                 ans = torch.add(ans.permute(2,3,1,0) ,first_term.permute(2,1,0)).permute(3,2,0,1) # (b, h, n, d)
@@ -210,11 +210,11 @@ def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatu
 
             else:
                 first = a0*torch.cumsum(v,2) # (b, h, n, d)
-                second = a1*torch.einsum("bhij,bhijk -> bhik",[q, torch.cumsum(torch.einsum("bhij,bhik -> bhijk",[k,v]),2)])/temperatue # (b, h, n, d)
+                second = a1*torch.einsum("bhij,bhijk -> bhik",[q, torch.cumsum(torch.einsum("bhij,bhik -> bhijk",[k,v]),2)])/temperature # (b, h, n, d)
 
                 kcs = torch.cumsum(k,-2) # (b, h, n, d)
                 div1 = a0*torch.cumsum(torch.ones([q.shape[0],q.shape[1],q.shape[2]], device=k.device),2) # (b, h, 1)
-                div2 = a1*torch.einsum("bhij,bhij -> bhi",[q,kcs])/temperatue # (b, h, n)
+                div2 = a1*torch.einsum("bhij,bhij -> bhi",[q,kcs])/temperature # (b, h, n)
                 div = (div1 + div2).unsqueeze(-1) # (b, h, n, 1)
 
                 ans = first + second # (b, h, n, d)
@@ -225,14 +225,14 @@ def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperatu
         return ans
 
     else:
-        # temperatue = temperatue*math.sqrt(q.shape[3])
-        temperatue2 = temperatue*temperatue
+        # temperature = temperature*math.sqrt(q.shape[3])
+        temperature2 = temperature*temperature
 
         k2 = k.unsqueeze(-1) @ k.unsqueeze(-2)  # (b, h, n, d, 1) @ (b, h, n, 1, d) -> (b, h, n, d, d)
         k2 = k2.flatten(-2)                     # (b, h, n, d*d)
         q2 = q.unsqueeze(-1) @ q.unsqueeze(-2)  # (b, h, n, d, 1) @ (b, h, n, 1, d) -> (b, h, n, d, d)
         q2 = q2.flatten(-2)    
-        attn = a0 + a1*torch.matmul(q, torch.swapaxes(k, -2, -1))/temperatue + a2*torch.matmul(q2, torch.swapaxes(k2, -2, -1))/temperatue2
+        attn = a0 + a1*torch.matmul(q, torch.swapaxes(k, -2, -1))/temperature + a2*torch.matmul(q2, torch.swapaxes(k2, -2, -1))/temperature2
         if mask is not None:
             attn = torch.where(mask == 0, 0, attn)
         attn /= (torch.sum(attn, axis=3)).unsqueeze(-1)
@@ -244,9 +244,9 @@ class FASTMultiHeadAttention(torch.nn.Module):
         super(FASTMultiHeadAttention, self).__init__()
         self.use_custom_gradient = use_custom_gradient
 
-    def forward(self, q,k,v,drop_noise=None,rpe_matrix = None, mask = False, dropout = 0.0, normalize = False, temperatue = 1.0, a0 = 1.0, a1 = 1.0, a2 = 0.5,lim = 1.0,p=2):
-        if self.use_custom_gradient: return FASTMultiHeadAttention_Function.apply(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperatue,a0,a1,a2,lim,p)
-        else: return fastmax_function(q,k,v,mask,dropout,normalize,temperatue,a0,a1,a2,lim,p)
+    def forward(self, q,k,v,drop_noise=None,rpe_matrix = None, mask = False, dropout = 0.0, normalize = False, temperature = 1.0, a0 = 1.0, a1 = 1.0, a2 = 0.5,lim = 1.0,p=2):
+        if self.use_custom_gradient: return FASTMultiHeadAttention_Function.apply(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
+        else: return fastmax_function(q,k,v,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
 
 def rpe_matrix_creator(n, d, device, dtype, structured = False, is_zero = True):
     """
@@ -327,7 +327,7 @@ device = torch.device(0)
 mask = False
 dropout = 0.0 # between 0 and 1
 normalize = False
-temperatue = 1.0
+temperature = 1.0
 p = 2
 
 
@@ -349,7 +349,7 @@ for i in np.logspace(strt, endd, count):
     rpe_matrix = rpe_matrix_creator(k.shape[-2],q.shape[-1],q.device,q.dtype,structured = True,is_zero = False).contiguous()
     drop_noise = torch.normal(0,1,size=(q.shape),dtype=q.dtype,device=q.device).contiguous()
     start_time = time.time()
-    e = fastmax_custom(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperatue,a0,a1,a2,lim,p)
+    e = fastmax_custom(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
     # print(e)
     cuda.synchronize()
     end_time = time.time()
