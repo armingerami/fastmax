@@ -290,7 +290,7 @@ v = torch.normal(0,1,[b,h,n,d],device=torch.device('cuda'),requires_grad=True)
 
 dtype = torch.float32
 device = torch.device(0)
-mask = True
+mask = False
 dropout = 0.0 # between 0 and 1
 normalize = True
 temperature = 1.0
@@ -298,7 +298,7 @@ a0 = 1.0
 a1 = 1.0
 a2 = 0.5
 lim = 1.0
-p = 2
+p = 1
 
 rpe_matrix = rpe_matrix_creator(k.shape[-2],q.shape[-1],q.device,q.dtype,structured = True,is_zero = False).contiguous()
 drop_noise = torch.normal(0,1,size=(q.shape),dtype=q.dtype,device=q.device).contiguous()
