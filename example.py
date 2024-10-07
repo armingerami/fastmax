@@ -6,6 +6,11 @@ import numpy as np
 class FASTMultiHeadAttention_Function(torch.autograd.Function):
     @staticmethod
     def forward(ctx, q,k,v, drop_noise, rpe_matrix = None, mask = False, dropout = 0.0, normalize = False, temperature = 1.0, a0 = 1.0, a1 = 1.0, a2 = 0.5,lim = 1.0, p=2):
+        # print(q.get_device())
+        if q.get_device() == -1: 
+            ctx.save_for_backward(q,k,v,q)
+            return q
+
         b = 0
         if len(q.shape) == 4:
             b = q.shape[0]
@@ -18,14 +23,19 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
         if rpe_matrix is None:
             print("Relative Positional Encoding must be given. Send a 2*n-1 by d matrix of all zeros if you don't want to use RPE.")
 
-        # q = q.permute(1,2,0).contiguous() # (b*h,n,d) -> (n,d,b*h)
-        # k = k.permute(1,2,0).contiguous() # (b*h,n,d) -> (n,d,b*h)
-        # v = v.permute(1,2,0).contiguous() # (b*h,n,d) -> (n,d,b*h)
+
         q = q.permute(1,0,2).contiguous() # (b*h,n,d) -> (n,b*h,d)
         k = k.permute(1,0,2).contiguous() # (b*h,n,d) -> (n,b*h,d)
         v = v.permute(1,0,2).contiguous() # (b*h,n,d) -> (n,b*h,d)
         drop_noise = drop_noise.permute(1,0,2).contiguous() # (b*h,n,d) -> (n,b*h,d)
+
+        # device = "cuda:0"
+        # q = torch.tensor(q, device = device)
+        # k = torch.tensor(k, device = device)
+        # v = torch.tensor(v, device = device)
+        # drop_noise = torch.tensor(drop_noise, device = device)
         # print(torch.cuda.memory_allocated())
+        
         o = fastmax_cuda.forwardpass(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
         # print(torch.cuda.memory_allocated())
         # print('a')
@@ -43,31 +53,12 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
         return o
 
 
-    # @staticmethod
-    # def forward(ctx, q,k,v, drop_noise, rpe_matrix = None, mask = False, dropout = 0.0, normalize = False, temperature = 1.0, a0 = 1.0, a1 = 1.0, a2 = 0.5,lim = 1.0, p = 1):
-
-    #     if len(q.shape) != 4: print("q, k, and v should be 4 dimensional tensors with shaoe of (b,n,h,d).")
-
-    #     if rpe_matrix is None:
-    #       print("Relative Positional Encoding must be given. Send a 2*n-1 by d matrix of all zeros if you don't want to use RPE.")
-
-    #     # print(torch.cuda.memory_allocated())
-    #     o = fastmax_cuda.forwardpass(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
-    #     # print(torch.cuda.memory_allocated())
-        
-    #     ctx.save_for_backward(q,k,v,o)
-    #     ctx.mask = mask
-    #     ctx.p = p
-    #     ctx.t = temperature
-    #     ctx.a0 = a0
-    #     ctx.a1 = a1
-    #     ctx.a2 = a2
-    #     o = o[:,:,:,:q.shape[3]] # (b,n,h,d+1) -> (b,n,h,d)
-    #     return o
-
     @staticmethod
     def backward(ctx, grad_output):
         q,k,v,o = ctx.saved_tensors
+        if q.get_device() == -1: 
+            return q, q, q, None, None, None, None, None, None, None, None, None, None, None
+
         mask = ctx.mask
         p = ctx.p
         b = ctx.b
@@ -89,7 +80,7 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
           gradk = gradk.reshape((b,int(gradk.shape[0]/b),gradk.shape[1],gradk.shape[2])).contiguous()
           gradv = gradv.reshape((b,int(gradv.shape[0]/b),gradv.shape[1],gradv.shape[2])).contiguous()
         
-        return gradq, gradk/t, gradv, None, None, None, None, None, None, None, None, None, None
+        return gradq, gradk/t, gradv, None, None, None, None, None, None, None, None, None, None, None
     
     # @staticmethod
     # def backward(ctx, grad_output):
