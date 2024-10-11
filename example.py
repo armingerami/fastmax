@@ -235,6 +235,7 @@ v = torch.normal(0,1,[b,h,n,d],device=torch.device('cuda'),requires_grad=True)
 
 dtype = torch.float32
 device = torch.device(0)
+
 mask = False
 dropout = 0.0 # between 0 and 1
 normalize = True
