@@ -5,7 +5,7 @@ import fastmax_cuda
 import numpy as np
 class FASTMultiHeadAttention_Function(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, q,k,v, drop_noise, rpe_matrix = None, mask = False, dropout = 0.0, normalize = False, temperature = 1.0, a0 = 1.0, a1 = 1.0, a2 = 0.5,lim = 1.0, p=2):
+    def forward(ctx, q,k,v, drop_noise, mask = False, dropout = 0.0, normalize = False, temperature = 1.0, a0 = 1.0, a1 = 1.0, a2 = 0.5,lim = 1.0, p=2):
         # print(q.get_device())
         if q.get_device() == -1: 
             ctx.save_for_backward(q,k,v,q)
@@ -20,9 +20,6 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
             drop_noise = drop_noise.reshape((drop_noise.shape[0]*drop_noise.shape[1],drop_noise.shape[2],drop_noise.shape[3])) # (b,h,n,d) -> (b*h,n,d)
         elif len(q.shape) != 3: print("q, k, and v should be either 3 or 4 dimensional tensors. If 3D: (b*h,n,d), if 4D: (b,h,n,d).")
 
-        if rpe_matrix is None:
-            print("Relative Positional Encoding must be given. Send a 2*n-1 by d matrix of all zeros if you don't want to use RPE.")
-
 
         q = q.permute(1,0,2).contiguous() # (b*h,n,d) -> (n,b*h,d)
         k = k.permute(1,0,2).contiguous() # (b*h,n,d) -> (n,b*h,d)
@@ -36,7 +33,7 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
         # drop_noise = torch.tensor(drop_noise, device = device)
         # print(torch.cuda.memory_allocated())
         
-        o = fastmax_cuda.forwardpass(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
+        o = fastmax_cuda.forwardpass(q,k,v,drop_noise,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
         # print(torch.cuda.memory_allocated())
         # print('a')
         ctx.save_for_backward(q,k,v,o)
@@ -57,7 +54,7 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
     def backward(ctx, grad_output):
         q,k,v,o = ctx.saved_tensors
         if q.get_device() == -1: 
-            return q, q, q, None, None, None, None, None, None, None, None, None, None, None
+            return q, q, q, None, None, None, None, None, None, None, None, None, None
 
         mask = ctx.mask
         p = ctx.p
@@ -80,21 +77,8 @@ class FASTMultiHeadAttention_Function(torch.autograd.Function):
           gradk = gradk.reshape((b,int(gradk.shape[0]/b),gradk.shape[1],gradk.shape[2])).contiguous()
           gradv = gradv.reshape((b,int(gradv.shape[0]/b),gradv.shape[1],gradv.shape[2])).contiguous()
         
-        return gradq, gradk/t, gradv, None, None, None, None, None, None, None, None, None, None, None
+        return gradq, gradk/t, gradv, None, None, None, None, None, None, None, None, None, None
     
-    # @staticmethod
-    # def backward(ctx, grad_output):
-    #     q,k,v,o = ctx.saved_tensors
-    #     mask = ctx.mask
-    #     p = ctx.p
-    #     t = ctx.t
-    #     a0 = ctx.a0
-    #     a1 = ctx.a1
-    #     a2 = ctx.a2
-
-    #     gradq, gradk, gradv = fastmax_cuda.backwardpass(q,k,v,o,grad_output,mask,a0,a1,a2,p) # (n,bh,d)
-        
-    #     return gradq, gradk/t, gradv, None, None, None, None, None, None, None, None, None, None, None
 
 def fastmax_function(q, k, v, mask=0, dropout_rate = 0.0, normalize=0, temperature=1, a0=1,a1=1,a2=0.5,lim=1,p=2, create_attn_matrix = 0):
     """
@@ -232,40 +216,10 @@ class FASTMultiHeadAttention(torch.nn.Module):
         super(FASTMultiHeadAttention, self).__init__()
         self.use_custom_gradient = use_custom_gradient
 
-    def forward(self, q,k,v,drop_noise=None,rpe_matrix = None, mask = False, dropout = 0.0, normalize = False, temperature = 1.0, a0 = 1.0, a1 = 1.0, a2 = 0.5,lim = 1.0,p=2):
-        if self.use_custom_gradient: return FASTMultiHeadAttention_Function.apply(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
+    def forward(self, q,k,v,drop_noise=None, mask = False, dropout = 0.0, normalize = False, temperature = 1.0, a0 = 1.0, a1 = 1.0, a2 = 0.5,lim = 1.0,p=2):
+        if self.use_custom_gradient and mask: return FASTMultiHeadAttention_Function.apply(q,k,v,drop_noise,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
         else: return fastmax_function(q,k,v,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
 
-def rpe_matrix_creator(n, d, device, dtype, structured = False, is_zero = True):
-    """
-    Creates the relative positional encoding matrix
-    Inputs: (assuming query is a (b,h,n,d) or (b*h,n,d) tensor)
-      - n (int): number of tokens
-      - d (int): dimesion/channel per head
-      - data type: must be torch.float32. This input is used to make sure the datatype used by the attention head is torch.float32.
-      - Structured (bool): if True, produces sin/cos based RPE, and randomized matrx otherwise.
-    Output:
-      - rpe: a (2*n-1,d) matrix.
-    """
-    if(dtype != torch.float32): print("The data type must be float32 in order for Fastmax to work")
-    if(structured):
-        pe_positive = torch.zeros(n, d,device=device,dtype=dtype)
-        pe_negative = torch.zeros(n, d,device=device,dtype=dtype)
-        position = torch.arange(0, n, device=device,dtype=dtype).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d, 2, device=device,dtype=dtype) * -(math.log(10000.0) / d))
-        pe_positive[:, 0::2] = torch.sin(position * div_term)
-        pe_positive[:, 1::2] = torch.cos(position * div_term)
-        pe_negative[:, 0::2] = torch.sin(-1 * position * div_term)
-        pe_negative[:, 1::2] = torch.cos(-1 * position * div_term)
-        pe_positive = torch.flip(pe_positive, [0])
-        pe_negative = pe_negative[1:]
-        rpe = torch.cat([pe_positive, pe_negative], dim=0)
-    else: 
-        if is_zero:
-            rpe = torch.zeros(size=(2*n-1,d),device=device,dtype=dtype)
-        else:
-            rpe = torch.normal(0,1,size=(2*n-1,d),device=device,dtype=dtype)
-    return rpe
 fastmax_custom = FASTMultiHeadAttention()
 
 assert torch.cuda.is_available()
@@ -291,8 +245,7 @@ a2 = 0.5
 lim = 1.0
 p = 1
 
-rpe_matrix = rpe_matrix_creator(k.shape[-2],q.shape[-1],q.device,q.dtype,structured = True,is_zero = False).contiguous()
 drop_noise = torch.normal(0,1,size=(q.shape),dtype=q.dtype,device=q.device).contiguous()
-output = fastmax_custom(q,k,v,drop_noise,rpe_matrix,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
+output = fastmax_custom(q,k,v,drop_noise,mask,dropout,normalize,temperature,a0,a1,a2,lim,p)
 print(output)
-# print(torch.autograd.functional.jacobian(fastmax_custom, (q,k,v,drop_noise,rpe_matrix))[0:3])
+
