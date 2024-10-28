@@ -7,9 +7,12 @@
 
 
 module load Python3/3.11.2
-source /fs/nexus-scratch/agerami/litgpt/.venv/bin/activate
+# activate you virtual environment or conda
+source "virtual env dir"/bin/activate
+# the next 3 lines install the fastmax library
 module load gcc
 module load cuda
-python ./fastmax/setup.py install
+python "dir were you put fastmax files"/fastmax/setup.py install
+# your commands
 litgpt pretrain pythia-14m \
-   --config /fs/nexus-scratch/agerami/litgpt/config_hub/pretrain/debug.yaml
+   --config "dir were you put e.g. litgpt"/litgpt/config_hub/pretrain/debug.yaml
