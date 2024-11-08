@@ -83,30 +83,30 @@ void calc_unmasked(const torch::PackedTensorAccessor32<float,3,torch::RestrictPt
     }
 
     // // calc lin
-    // for(int l = 0; l < nk;  ++l){
-    //   t += k[ikv][l][m]*v[ikv][l][outer];
-    // }
-    // for(int l = 0; l < nq;  ++l){
-    //   atomicAdd(&o[i][l][outer],t*a1*q[i][l][m]);
-    // }
-    // for(int m = 0; m < szr; ++m) tr[m] = 0;
-    // for(int l = 0; l < nk;  ++l){
-    //   tv = v[i][l][outer];
-    //   s[outer+d] = k[i][l][outer];
-    //   __syncthreads();
-    //   for(int m = 0; m < szr; ++m){
-    //     tr[m] += s[d+mm*szr+m]*tv;
-    //   }
-    // }
-    // for(int l = 0; l < nq;  ++l){
-    //   s[outer] = q[i][l][outer];
-    //   __syncthreads();
-    //   t = 0;
-    //   for(int m = 0; m < szr; ++m){
-    //     t += a1*tr[m]*s[mm*szr+m];
-    //   }
-    //   atomicAdd(&o[i][l][outer],t);
-    // }
+     for(int l = 0; l < nk;  ++l){
+       t += k[ikv][l][m]*v[ikv][l][outer];
+     }
+     for(int l = 0; l < nq;  ++l){
+       atomicAdd(&o[i][l][outer],t*a1*q[i][l][m]);
+     }
+     for(int m = 0; m < szr; ++m) tr[m] = 0;
+     for(int l = 0; l < nk;  ++l){
+       tv = v[i][l][outer];
+       s[outer+d] = k[i][l][outer];
+       __syncthreads();
+       for(int m = 0; m < szr; ++m){
+         tr[m] += s[d+mm*szr+m]*tv;
+       }
+     }
+     for(int l = 0; l < nq;  ++l){
+       s[outer] = q[i][l][outer];
+       __syncthreads();
+       t = 0;
+       for(int m = 0; m < szr; ++m){
+         t += a1*tr[m]*s[mm*szr+m];
+       }
+       atomicAdd(&o[i][l][outer],t);
+     }
 
 
     for(int l = 0; l < nq; ++l) o[i][l][outer] /= o[i][l][d];
